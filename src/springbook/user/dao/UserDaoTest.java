@@ -4,6 +4,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 
 import java.sql.SQLException;
+import java.util.List;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -31,9 +32,9 @@ public class UserDaoTest {
 	
 	@Before
 	public void setup() {
-		user1 = new User("gyumee", "�ڼ�ö", "springno1");
-		user2 = new User("leegw700", "�̱��", "springno2");
-		user3 = new User("bumjin", "�ڹ���", "springno3");
+		user1 = new User("gyumee", "박성철", "springno1");
+		user2 = new User("leegw700", "이길원", "springno2");
+		user3 = new User("bumjin", "박범진", "springno3");
 	}
 	
 	@Test
@@ -41,8 +42,6 @@ public class UserDaoTest {
 		dao.deleteAll();
 		assertThat(dao.getCount(), is(0));
 		
-		User user1 = new User("gyumee", "�ڼ�ö", "springno1");
-		User user2 = new User("leegw700", "�̱��", "springno2");
 		dao.add(user1);
 		dao.add(user2);
 		assertThat(dao.getCount(), is(2));
@@ -80,4 +79,37 @@ public class UserDaoTest {
 		
 		dao.get("unknown_id");
 	}
+	
+	@Test
+	public void getAll() throws SQLException {
+		dao.deleteAll();
+		
+		List<User> users0 = dao.getAll();
+		assertThat(users0.size(), is(0));	// 데이터가 없을경우 0이 리턴.
+		
+		dao.add(user1);
+		List<User> users1 = dao.getAll();
+		assertThat(users1.size(), is(1));
+		checkSameUser(user1, users1.get(0));
+		
+		dao.add(user2);
+		List<User> users2 = dao.getAll();
+		assertThat(users2.size(), is(2));
+		checkSameUser(user1, users2.get(0));
+		checkSameUser(user2, users2.get(1));
+		
+		dao.add(user3);
+		List<User> users3 = dao.getAll();
+		assertThat(users3.size(), is(3));
+		checkSameUser(user3, users3.get(0));	// id순서대로 정렬. id가 문자열로 삽입되어있음.
+		checkSameUser(user1, users3.get(1));
+		checkSameUser(user2, users3.get(2));
+	}
+	
+	private void checkSameUser(User addUser, User getUser) {
+		assertThat(addUser.getId(), is(getUser.getId()));
+		assertThat(addUser.getName(), is(getUser.getName()));
+		assertThat(addUser.getPassword(), is(getUser.getPassword()));
+	}
+	
 }

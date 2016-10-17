@@ -4,125 +4,66 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 
 import javax.sql.DataSource;
 
-import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCreator;
+import org.springframework.jdbc.core.ResultSetExtractor;
+import org.springframework.jdbc.core.RowMapper;
 
 import springbook.user.domain.User;
 
 public class UserDao {
 	
-	private JdbcContext jdbcContext;
-	private DataSource dataSource;
+	private RowMapper<User> userMapper = new RowMapper<User>() {
+		@Override
+		public User mapRow(ResultSet rs, int rowNum) throws SQLException {
+			User user = new User();
+			user.setId(rs.getString("id"));
+			user.setName(rs.getString("name"));
+			user.setPassword(rs.getString("password"));
+			return user;
+		}
+	};
 	
+	private JdbcTemplate jdbcTemplate;
 	
 	public void setDataSource(DataSource datasource) {
-		jdbcContext = new JdbcContext();
-		jdbcContext.setDataSource(datasource);
-
-		this.dataSource = datasource;	// 안고친 애들때문에 남겨둠.
+		jdbcTemplate = new JdbcTemplate(datasource);
 	}
 	
-	
 	public void add(final User user) throws SQLException {	// 내부익명 클래스가 매서드의 로컬변수를 공유할때는 final 선언해주는게 좋다. ∵ 스레드 Safe 하기 위해.	
-		jdbcContext.workWithStatementStrategy(new StatementStrategy() {	// 변하는 부분을 주입받아 변하지 않는 부분을 포함하여 전체를 수행. 
-			@Override
-			public PreparedStatement makePreparedStatement(Connection con) throws SQLException {
-				String sql = "insert into users(id, name, password) values(?, ?, ?)";
-				PreparedStatement pstmt = con.prepareStatement(sql);
-				pstmt.setString(1, user.getId());
-				pstmt.setString(2, user.getName());
-				pstmt.setString(3, user.getPassword());
-				return pstmt;
-			}
-		});
-		
+		jdbcTemplate.update("insert into users(id, name, password) values(?, ?, ?)", user.getId(), user.getName(), user.getPassword());
 	}
 	
 	public User get(String id) throws SQLException {
-		Connection con = null;
-		PreparedStatement pstmt = null;
-		ResultSet rs = null;
-		try {
-			con = dataSource.getConnection();
-			
-			String sql = "select * from users where id=?";
-			pstmt = con.prepareStatement(sql);
-			pstmt.setString(1, id);
-			
-			rs = pstmt.executeQuery();
-			User user = null;
-			if(rs.next()) {
-				user = new User();
-				user.setId(rs.getString("id"));
-				user.setName(rs.getString("name"));
-				user.setPassword(rs.getString("password"));
-			}
-			if (user == null) throw new EmptyResultDataAccessException(1);
-			return user;
-		} catch (SQLException e) {
-			throw e;
-		} finally {
-			if (rs != null) {
-				try {
-					rs.close();
-				} catch (SQLException e) {
-				}
-			}
-			if(pstmt != null) {
-				try {
-					pstmt.close();
-				} catch (SQLException e) {
-				}
-			}
-			if(con != null) {
-				try {
-					con.close();
-				} catch (SQLException e) {
-				}
-			}
-		}
-		
+		return jdbcTemplate.queryForObject("select * from users where id=?", new Object[] {id}, userMapper);		
+	}
+	
+	public List<User> getAll() {
+		return jdbcTemplate.query("select * from users order by id", userMapper);
 	}
 	
 	public void deleteAll() throws SQLException {
-		jdbcContext.excuteSql("delete from users");			
+		jdbcTemplate.update("delete from users");
 	}
 	
 	public int getCount() throws SQLException {
-		Connection con = null;
-		PreparedStatement pstmt = null;
-		ResultSet rs = null;
-		try {
-			con = dataSource.getConnection();
-			String sql = "select count(*) from users";
-			pstmt = con.prepareStatement(sql);
-			rs = pstmt.executeQuery();
-			rs.next();
-			
-			return rs.getInt(1);
-		} catch (SQLException e) {
-			throw e;
-		} finally {
-			if (rs != null) {
-				try {
-					rs.close();
-				} catch (SQLException e) {
-				}
+		return jdbcTemplate.query(new PreparedStatementCreator() {
+			@Override
+			public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
+				return con.prepareStatement("select count(*) from users");
 			}
-			if(pstmt != null) {
-				try {
-					pstmt.close();
-				} catch (SQLException e) {
-				}
+		}, new ResultSetExtractor<Integer>() {
+			@Override
+			public Integer extractData(ResultSet rs) throws SQLException, DataAccessException {
+				rs.next();
+				return rs.getInt(1);
 			}
-			if(con != null) {
-				try {
-					con.close();
-				} catch (SQLException e) {
-				}
-			}
-		}
+		});
 	}
 }
+
