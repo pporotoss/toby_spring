@@ -13,41 +13,31 @@ import springbook.user.domain.User;
 
 public class UserDao {
 	
+	private JdbcContext jdbcContext;
 	private DataSource dataSource;
 	
+	
 	public void setDataSource(DataSource datasource) {
-		this.dataSource = datasource;
+		jdbcContext = new JdbcContext();
+		jdbcContext.setDataSource(datasource);
+
+		this.dataSource = datasource;	// 안고친 애들때문에 남겨둠.
 	}
 	
-	public void add(User user) throws SQLException {
-		Connection con = null;
-		PreparedStatement pstmt = null;
-		try {
-			con = dataSource.getConnection();
-			
-			String sql = "insert into users(id, name, password) values(?, ?, ?)";
-			pstmt = con.prepareStatement(sql);
-			pstmt.setString(1, user.getId());
-			pstmt.setString(2, user.getName());
-			pstmt.setString(3, user.getPassword());
-			
-			pstmt.executeUpdate();
-		}catch (SQLException e) {
-			throw e;	// ���� �߻��� �޼���� ������.
-		} finally {
-			if(pstmt != null) {
-				try {
-					pstmt.close();
-				} catch (SQLException e) {
-				}
+	
+	public void add(final User user) throws SQLException {	// 내부익명 클래스가 매서드의 로컬변수를 공유할때는 final 선언해주는게 좋다. ∵ 스레드 Safe 하기 위해.	
+		jdbcContext.workWithStatementStrategy(new StatementStrategy() {	// 변하는 부분을 주입받아 변하지 않는 부분을 포함하여 전체를 수행. 
+			@Override
+			public PreparedStatement makePreparedStatement(Connection con) throws SQLException {
+				String sql = "insert into users(id, name, password) values(?, ?, ?)";
+				PreparedStatement pstmt = con.prepareStatement(sql);
+				pstmt.setString(1, user.getId());
+				pstmt.setString(2, user.getName());
+				pstmt.setString(3, user.getPassword());
+				return pstmt;
 			}
-			if(con != null) {
-				try {
-					con.close();
-				} catch (SQLException e) {
-				}
-			}
-		}
+		});
+		
 	}
 	
 	public User get(String id) throws SQLException {
@@ -97,33 +87,7 @@ public class UserDao {
 	}
 	
 	public void deleteAll() throws SQLException {
-		
-		Connection con = null;
-		PreparedStatement pstmt = null;
-		try {
-			con = dataSource.getConnection();
-			
-			String sql = "delete from users";
-			pstmt = con.prepareStatement(sql);
-			
-			pstmt.executeUpdate();
-		} catch (SQLException e) {
-			throw e;	// ���� �߻��� �޼���� ������.
-		} finally {
-			if(pstmt != null) {
-				try {
-					pstmt.close();
-				} catch (SQLException e) {
-				}
-			}
-			if(con != null) {
-				try {
-					con.close();
-				} catch (SQLException e) {
-				}
-			}
-		}
-		
+		jdbcContext.excuteSql("delete from users");			
 	}
 	
 	public int getCount() throws SQLException {
