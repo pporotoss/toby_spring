@@ -9,6 +9,7 @@
 	<configs>
 		<config>src/applicationContext.xml</config>
 		<config>src/springbook/learningtest/junit/junit.xml</config>
+		<config>src/springbook/learningtest/spring/factorybean/factoryBeanTest-context.xml</config>
 	</configs>
 	<autoconfigs>
 	</autoconfigs>

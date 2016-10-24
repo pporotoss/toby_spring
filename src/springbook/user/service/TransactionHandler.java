@@ -8,9 +8,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
+/* 리플랙션을 이용하여 런타임시 생성되는 부가기능만을 수행하는 다이나믹 프록시가 수행할 부가기능을 정의. 
+ * 리플렉션을 이용하기 때문에 부가기능을 적용할 인터페이스의 메서드를 모두 구현하지 않아도, invoke() 메서드 하나로 모든 메서드에 부가기능을 적용가능하다. 
+ * */
 public class TransactionHandler implements InvocationHandler{
 	
-	private Object target;	// 부가기능을 제공해줄 객체.
+	private Object target;	// 핸들러가 부가기능을 수행하고나서, 핵심 로직을 위임할객체.
 	public void setTarget(Object target) {
 		this.target = target;
 	}
@@ -36,7 +39,7 @@ public class TransactionHandler implements InvocationHandler{
 	}
 	
 	
-	private Object invokeInTransaction(Method method, Object[] args) throws Throwable {
+	private Object invokeInTransaction(Method method, Object[] args) throws Throwable {	// 부가기능 적용.
 		TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
 		
 		try {

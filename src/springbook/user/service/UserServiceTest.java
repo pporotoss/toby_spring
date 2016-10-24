@@ -1,5 +1,6 @@
 package springbook.user.service;
 
+import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
@@ -21,14 +22,18 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.springframework.aop.framework.ProxyFactoryBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.mail.MailException;
 import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import springbook.learningtest.jdk.HelloTarget;
 import springbook.user.dao.UserDao;
 import springbook.user.domain.Level;
 import springbook.user.domain.User;
@@ -49,7 +54,10 @@ public class UserServiceTest {
 	MailSender mailSender;
 	
 	@Autowired
-	UserServiceImpl userServiceImpl;
+	ApplicationContext context;
+	
+	@Autowired
+	UserService testUserService;
 	
 	List<User> users;
 	
@@ -123,21 +131,27 @@ public class UserServiceTest {
 	}
 	
 	@Test
+	//@DirtiesContext
 	public void upgradeAllOrNothing() throws Exception {
-		TestUserService testUserService = new TestUserService(users.get(3).getId());
-		testUserService.setUserDao(userDao);
-		testUserService.setMailSender(mailSender);
+		//TestUserServiceImpl testUserService = new TestUserServiceImpl();
+		//testUserService.setUserDao(userDao);
+		//testUserService.setMailSender(mailSender);
 		
-		UserServiceTx txUserService = new UserServiceTx();
-		txUserService.setTransactionManager(transactionManager);
-		txUserService.setUserService(testUserService);	// 테스트를 위해서는 TestUserService의 메서드를 사용해야 하므로 TestUserService 객체를 주입해준다.
+		//TxProxyFactoryBean txProxyFactoryBean = context.getBean("&userService", TxProxyFactoryBean.class);	// JDK 제공 프록시 생성.
+		//ProxyFactoryBean txProxyFactoryBean = context.getBean("&proxyUserService", ProxyFactoryBean.class);	// 스프링 제공 프록시 생성.
+		//txProxyFactoryBean.setTarget(testUserService);
+		//UserService txUserService = (UserService) txProxyFactoryBean.getObject();
 		
+		//UserServiceTx txUserService = new UserServiceTx();
+		//txUserService.setTransactionManager(transactionManager);
+		//txUserService.setUserService(testUserService);	// 테스트를 위해서는 TestUserService의 메서드를 사용해야 하므로 TestUserService 객체를 주입해준다.
+				
 		userDao.deleteAll();
 		for (User user : users) {
 			userDao.add(user);
 		}
 		try {
-			txUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
+			testUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
 			fail("TestUserServiceException expected");
 		} catch (TestUserServiceException e) {
 		}
@@ -147,9 +161,9 @@ public class UserServiceTest {
 	
 	@Test
 	public void proxyUpgradeAllOrNothing() {
-		TestUserService testUserService = new TestUserService(users.get(3).getId());
-		testUserService.setUserDao(userDao);
-		testUserService.setMailSender(mailSender);
+		//TestUserServiceImpl testUserService = new TestUserServiceImpl(users.get(3).getId());
+		//testUserService.setUserDao(userDao);
+		//testUserService.setMailSender(mailSender);
 		
 		TransactionHandler txHandler = new TransactionHandler();	// 트랜잭션 적용을 위해 InvocationHandler를 직접 구현한 클래스.
 		txHandler.setTarget(testUserService);
@@ -173,8 +187,6 @@ public class UserServiceTest {
 		}
 		
 		checkLevelUpgraded(users.get(1), false);
-		
-		
 	}
 	
 	private void checkLevelUpgraded(User user, boolean upgraded) {
@@ -185,6 +197,11 @@ public class UserServiceTest {
 		} else {
 			assertThat(updateUser.getLevel(), is(user.getLevel()));
 		}
+	}
+	
+	@Test
+	public void advisorAutoProxyCreator() {
+		assertThat(testUserService, is(instanceOf(java.lang.reflect.Proxy.class)));
 	}
 	
 	
@@ -245,21 +262,17 @@ public class UserServiceTest {
 		
 	}
 	
-	class TestUserService extends UserServiceImpl{
-		private String id;
-		
-		private TestUserService(String id) {
-			this.id = id;
-		}
+	static class TestUserService extends UserServiceImpl{	 
+		private String id = "madnite1";	// 스프링 빈에 등록하기때문에 예외 발생시킬 아이디를 직접 입력.
 		
 		@Override
-		protected void upgradeLevel(User user) {
+		protected void upgradeLevel(User user) {	// 업그레이드 레벨 메서드 수행시에만 예외를 발생시키기위해 오버라이드.
 			if (user.getId().equals(this.id)) throw new TestUserServiceException();
 			super.upgradeLevel(user);
 		}
 	}
 	
-	class TestUserServiceException extends RuntimeException {
-		
+	static class TestUserServiceException extends RuntimeException {
 	}
+	
 }
