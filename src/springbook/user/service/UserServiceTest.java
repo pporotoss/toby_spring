@@ -24,14 +24,22 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.aop.framework.ProxyFactoryBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
+import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.transaction.TransactionConfiguration;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 import springbook.learningtest.jdk.HelloTarget;
 import springbook.user.dao.UserDao;
@@ -40,6 +48,8 @@ import springbook.user.domain.User;
 
 @RunWith(SpringJUnit4ClassRunner.class)	// 스프링의 기능을 사용하여 테스트하려면 선언해줘야 한다.
 @ContextConfiguration(locations="/test-applicationContext.xml")
+@Transactional(propagation=Propagation.REQUIRED)
+//@Rollback
 public class UserServiceTest {
 	@Autowired
 	UserService userService;
@@ -57,6 +67,7 @@ public class UserServiceTest {
 	ApplicationContext context;
 	
 	@Autowired
+	@Qualifier("testUserService")
 	UserService testUserService;
 	
 	List<User> users;
@@ -130,7 +141,7 @@ public class UserServiceTest {
 		assertThat(userWithoutLevelRead.getLevel(), is(Level.BASIC));
 	}
 	
-	@Test
+	@Test(expected=RuntimeException.class)
 	//@DirtiesContext
 	public void upgradeAllOrNothing() throws Exception {
 		//TestUserServiceImpl testUserService = new TestUserServiceImpl();
@@ -146,20 +157,23 @@ public class UserServiceTest {
 		//txUserService.setTransactionManager(transactionManager);
 		//txUserService.setUserService(testUserService);	// 테스트를 위해서는 TestUserService의 메서드를 사용해야 하므로 TestUserService 객체를 주입해준다.
 				
-		userDao.deleteAll();
+		testUserService.deleteAll();
+		assertThat(userService.getAll().size(), is(0));
 		for (User user : users) {
-			userDao.add(user);
+			testUserService.add(user);
 		}
-		try {
-			testUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
-			fail("TestUserServiceException expected");
+		testUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
+		//fail("TestUserServiceException expected");
+		/*try {
 		} catch (TestUserServiceException e) {
-		}
-		
+			System.out.println(e.getMessage());
+		} finally {
+		}*/
 		checkLevelUpgraded(users.get(1), false);
+		
 	}
 	
-	@Test
+	@Test(expected=RuntimeException.class)
 	public void proxyUpgradeAllOrNothing() {
 		//TestUserServiceImpl testUserService = new TestUserServiceImpl(users.get(3).getId());
 		//testUserService.setUserDao(userDao);
@@ -180,11 +194,12 @@ public class UserServiceTest {
 		for (User user : users) {
 			userDao.add(user);
 		}
-		try {
-			txUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
-			fail("TestUserServiceException expected");
-		} catch (TestUserServiceException e) {
-		}
+		txUserService.upgradeLevels();	// TestUserService를 주입해 주었기때문에 TestUserService의 메서드를 수행하게 된다.
+		fail("TestUserServiceException expected");
+		/*try {
+		} catch (TestUserServiceException e) {	// try-catch에서 먼저 롤백해버려서 클래스에 선언한 @Transactional과 충돌된다. 
+			System.out.println(e.getMessage());
+		}*/
 		
 		checkLevelUpgraded(users.get(1), false);
 	}
@@ -204,9 +219,45 @@ public class UserServiceTest {
 		assertThat(testUserService, is(instanceOf(java.lang.reflect.Proxy.class)));
 	}
 	
+	@Test
+	public void readOnlyTransactionAttribute() {
+		testUserService.getAll();
+		testUserService.get("");
+	}
+	
+	@Test
+	@Transactional	// 테스트 메서드에 @Transactional 어노테이션 적용시 테스트 종료시 자동으로 롤백해준다.
+	@Rollback(true)	// 테스트 메서드 종료시 @Transactional 어노테이션에 의해 강제로 롤백되지 않도록 해준다. 기본값=true
+	public void transactionSync() {
+		
+		DefaultTransactionDefinition txDefinition = new DefaultTransactionDefinition();
+		txDefinition.setReadOnly(true); // 읽기전용으로 트랜잭션을 정의.
+		
+		TransactionStatus txStatus = transactionManager.getTransaction(txDefinition);	// 트랜잭션매니저에게 직접 트랜잭션을 얻어오면서 트랙잭션이 시작된다.
+		
+		try {
+		
+			userService.deleteAll();
+			assertThat(userDao.getAll().size(), is(0));	// 지워진거 확인.
+			userService.add(users.get(0));
+			userService.add(users.get(1));
+			assertThat(userDao.getAll().size(), is(2));	// 두명 추가된거 확인.
+		
+		} finally {
+			
+			//transactionManager.rollback(txStatus);	// 오류 여부와 상관없이 테스트 끝나면 무조껀 강제로 롤백.
+			
+			//assertThat(userDao.getAll().size(), is(0));	// 롤백여부 확인
+		}
+		
+		transactionManager.commit(txStatus);
+	}
+	
+	
+	
 	
 	/* 테스트용 객체 생성 */
-	class MockMailSender implements MailSender {
+	static class MockMailSender implements MailSender {
 		private List<String> requests = new ArrayList<>();
 		
 		public List<String> getRequests() {
@@ -225,7 +276,7 @@ public class UserServiceTest {
 		
 	}
 	
-	class MockUserDao implements UserDao {
+	static class MockUserDao implements UserDao {
 		
 		private List<User> users;
 		private List<User> updated = new ArrayList<>();
@@ -267,12 +318,40 @@ public class UserServiceTest {
 		
 		@Override
 		protected void upgradeLevel(User user) {	// 업그레이드 레벨 메서드 수행시에만 예외를 발생시키기위해 오버라이드.
-			if (user.getId().equals(this.id)) throw new TestUserServiceException();
+			if (user.getId().equals(this.id)) {
+				throw new TestUserServiceException("예외발생!!");
+			}
 			super.upgradeLevel(user);
+		}
+		
+		@Override
+		public List<User> getAll() {
+			int count = 0;
+			for(User user : super.getAll()) {
+				count++;
+				System.out.println(user.getEmail());
+				user.setEmail("바꿈 "+count);
+				super.update(user);
+				System.out.println(userDao.get(user.getId()).getEmail());
+			}
+			return userDao.getAll();
+		}
+		
+		@Override
+		public User get(String id) {
+			userDao.deleteAll();
+			return null;
 		}
 	}
 	
 	static class TestUserServiceException extends RuntimeException {
+
+		public TestUserServiceException() {
+			super();
+		}
+		public TestUserServiceException(String message) {
+			super(message);
+		}
 	}
 	
 }

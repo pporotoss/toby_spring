@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
+		http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.3.xsd">
 	
 	<bean id="dataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
 		<property name="driverClass" value="org.mariadb.jdbc.Driver" />
@@ -12,15 +16,23 @@
 	
 	<bean id="userDao" class="springbook.user.dao.UserDaoJdbc">
 		<property name="dataSource" ref="dataSource"/>
+		<property name="sqlService" ref="sqlService"/>
 	</bean>
 	
-	<!-- <bean id="userService" class="springbook.user.service.TxProxyFactoryBean">
-		<property name="transactionManager" ref="transactionManager"/>
-		<property name="target" ref="userServiceImpl" />
-		<property name="pattern" value="upgradeLevels"/>
-		<property name="serviceInterface" value="springbook.user.service.UserService"/>
-	</bean> -->
-		
+	<bean id="sqlService" class="springbook.user.dao.SimpleSqlService">
+		<property name="sqlMap">
+			<map>
+				<entry key="userAdd" value="insert into users(id, name, password, email, level, login, recommend) values(?, ? ,? ,? ,? ,? ,?)" />
+				<entry key="userGet" value="select * from users where id = ?"/>
+				<entry key="userGetAll" value="select * from users order by id" />
+				<entry key="userDeleteAll" value="delete from users" />
+				<entry key="userGetCount" value="select count(*) from users" />
+				<entry key="userUpdate" value="update users 
+					set name=?, password=?, email=?, level=?, login=?, recommend=? where id=?" />
+			</map>
+		</property>
+	</bean>
+	
 	<bean id="userService" class="springbook.user.service.UserServiceImpl">
 		<property name="userDao" ref="userDao"/>
 		<property name="mailSender" ref="mailSender"/>
@@ -30,15 +42,39 @@
 		<property name="dataSource" ref="dataSource"/>
 	</bean>
 	
-	<bean id="transactionAdvice" class="springbook.user.service.TransactionAdvice"><!-- 부가기능인 트랜잭션 처리를 해주는 어드바이스 -->
+	<bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/><!-- 어드바이저를 자동으로 검색하여 적용하는 자동 프록시 생성기 -->
+	
+	<tx:annotation-driven/><!-- @Transactional어노테이션 사용위해 필요. -->
+	
+	<aop:config><!-- 트랜잭션을 등록할 포인트컷 설정. -->
+		<!-- <aop:advisor advice-ref="transactionAdvice" pointcut="execution(* *..*Service.*(..))"/> --><!-- 모든 반환값의 모든 패키지안의 Service로 끝나는 클래스의 모든 메서드의 모든 매개변수. -->
+	</aop:config>
+	
+	<tx:advice id="transactionAdvice" transaction-manager="transactionManager">
+		<tx:attributes>
+			<tx:method name="get*" read-only="true" propagation="REQUIRED" /><!-- 트랜잭션 적용할 메서드 이름 및 전파 속성 설정. -->
+			<tx:method name="*"/>
+		</tx:attributes>
+	</tx:advice>
+	
+	<!-- UserServiceTest 클래스안의 스태틱클래스를 등록.  -->
+	<bean id="testUserService" class="springbook.user.service.UserServiceTest$TestUserService"
+		parent="userService"/><!-- userService 빈에 설정해놓은 설정정보를 모두 상속받는다. -->
+	
+	<!-- <bean id="userService" class="springbook.user.service.TxProxyFactoryBean">
 		<property name="transactionManager" ref="transactionManager"/>
-	</bean>
+		<property name="target" ref="userServiceImpl" />
+		<property name="pattern" value="upgradeLevels"/>
+		<property name="serviceInterface" value="springbook.user.service.UserService"/>
+	</bean> -->
+	
+	<!-- <bean id="transactionAdvice" class="springbook.user.service.TransactionAdvice">부가기능인 트랜잭션 처리를 해주는 어드바이스
+		<property name="transactionManager" ref="transactionManager"/>
+	</bean> -->
 	
 	<!-- <bean id="transactionPointcut" class="org.springframework.aop.support.NameMatchMethodPointcut">이름으로 메서드를 선별하는 포인트컷
 		<property name="mappedName" value="upgrade*"/>
 	</bean> -->
-	
-	<bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/><!-- 어드바이저를 자동으로 검색하여 적용하는 자동 프록시 생성기 -->
 	
 	<!-- NameMatchMethodPointcut을 상속하여 매서드 뿐만아니라, 클래스 이름으로 클래스 필터링 기능을 추가한 포인트컷 등록. -->
 	<!-- <bean id="transactionPointcut" class="springbook.learningtest.jdk.NameMatchClassMethodPointcut">
@@ -46,19 +82,14 @@
 		<property name="mappedName" value="upgrade*" />
 	</bean> -->
 	
-	<bean id="transactionPointcut" class="org.springframework.aop.aspectj.AspectJExpressionPointcut">
+	<!-- <bean id="transactionPointcut" class="org.springframework.aop.aspectj.AspectJExpressionPointcut">
 		<property name="expression" value="execution(* *..*ServiceImpl.upgrade*(..))"/>
 	</bean>
 	
-	<bean id="transactionAdvisor" class="org.springframework.aop.support.DefaultPointcutAdvisor">	<!-- 어드바이스 + 포인트컷을 하나로 묶은 객체인 어드바이저 -->
+	<bean id="transactionAdvisor" class="org.springframework.aop.support.DefaultPointcutAdvisor">	어드바이스 + 포인트컷을 하나로 묶은 객체인 어드바이저
 		<property name="advice" ref="transactionAdvice"/>
 		<property name="pointcut" ref="transactionPointcut"/>
-	</bean>
-	
-	
-	<!-- UserServiceTest 클래스안의 스태틱클래스를 등록.  -->
-	<bean id="testUserService" class="springbook.user.service.UserServiceTest$TestUserService"
-		parent="userService"/><!-- userService 빈에 설정해놓은 설정정보를 모두 상속받는다. -->
+	</bean> -->
 	
 	<!-- <bean id="proxyUserService" class="org.springframework.aop.framework.ProxyFactoryBean">다이나믹 프록시 생성.
 		<property name="target" ref="userServiceImpl"/>	부가기능을 적용할 타겟 클래스

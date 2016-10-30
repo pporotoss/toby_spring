@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 import javax.sql.DataSource;
 
@@ -16,13 +17,23 @@ import org.springframework.jdbc.core.RowMapper;
 
 import springbook.user.domain.Level;
 import springbook.user.domain.User;
+import springbook.user.sqlservice.SqlService;
 
 public class UserDaoJdbc implements UserDao{
 	
 	private JdbcTemplate jdbcTemplate;
-	
 	public void setDataSource(DataSource datasource) {
 		jdbcTemplate = new JdbcTemplate(datasource);
+	}
+	
+	/*private Map<String, String> sqlMap;
+	public void setSqlMap(Map<String, String> sqlMap) {
+		this.sqlMap = sqlMap;
+	}*/
+	
+	private SqlService sqlService;
+	public void setSqlService(SqlService sqlService) {
+		this.sqlService = sqlService;
 	}
 	
 	private RowMapper<User> userMapper = new RowMapper<User>() {
@@ -41,26 +52,26 @@ public class UserDaoJdbc implements UserDao{
 	};
 	
 	public void add(User user) {	// 내부익명 클래스가 매서드의 로컬변수를 공유할때는 final 선언해주는게 좋다. ∵ 스레드 Safe 하기 위해.	
-		jdbcTemplate.update("insert into users(id, name, password, level, login, recommend, email) values(?, ?, ?, ?, ?, ?, ?)", user.getId(), user.getName(), user.getPassword(), user.getLevel().intValue(), user.getLogin(), user.getRecommend(), user.getEmail());
+		jdbcTemplate.update(sqlService.getSql("userAdd"), user.getId(), user.getName(), user.getPassword(), user.getEmail(), user.getLevel().intValue(), user.getLogin(), user.getRecommend());
 	}
 	
 	public User get(String id) {
-		return jdbcTemplate.queryForObject("select * from users where id=?", new Object[] {id}, userMapper);		
+		return jdbcTemplate.queryForObject(sqlService.getSql("userGet"), new Object[] {id}, userMapper);		
 	}
 	
 	public List<User> getAll() {
-		return jdbcTemplate.query("select * from users order by id", userMapper);
+		return jdbcTemplate.query(sqlService.getSql("userGetAll"), userMapper);
 	}
 	
 	public void deleteAll() {
-		jdbcTemplate.update("delete from users");
+		jdbcTemplate.update(sqlService.getSql("userDeleteAll"));
 	}
 	
 	public int getCount() {
 		return jdbcTemplate.query(new PreparedStatementCreator() {
 			@Override
 			public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
-				return con.prepareStatement("select count(*) from users");
+				return con.prepareStatement(sqlService.getSql("userGetCount"));
 			}
 		}, new ResultSetExtractor<Integer>() {
 			@Override
@@ -73,7 +84,7 @@ public class UserDaoJdbc implements UserDao{
 
 	@Override
 	public void update(User user1) {
-		String sql = "update users set name=?, password=?, email=?, level=?, login=?, recommend=? where id=?";
-		jdbcTemplate.update(sql, user1.getName(), user1.getPassword(), user1.getEmail(), user1.getLevel().intValue(), user1.getLogin(), user1.getRecommend(), user1.getId());
+		jdbcTemplate.update(sqlService.getSql("userUpdate"), user1.getName(), user1.getPassword(), user1.getEmail(), user1.getLevel().intValue(), user1.getLogin(), user1.getRecommend(), user1.getId());
 	}
+	
 }
